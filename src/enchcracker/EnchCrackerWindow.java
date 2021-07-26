@@ -61,8 +61,6 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 	private JTextField xpSeed2TextField;
 	private JTextField levelTextField;
 
-	private long playerSeed;
-
 	private JLabel outDrop, outBook, outSlot;
 	private Versions mcVersion = Versions.latest();
 
@@ -442,6 +440,7 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 		});
 		ProgressButton btnCalculate = new ProgressButton("button");
 		JTextField playerSeed = new JTextField();
+		JCheckBox cbDummyMerged = new JCheckBox();
 
 		JButton btnResetCracker = new ProgressButton("button");
 		btnResetCracker.setText(translate("enchCrack.reset"));
@@ -512,6 +511,7 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 			for (int seed1Low = 0; seed1Low < 65536; seed1Low++) {
 				if ((((seed1High | seed1Low) * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_0000L) == seed2High) {
 					playerSeed.setText(String.format("%12X", ((seed1High | seed1Low) * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_ffffL));
+					cbDummyMerged.setSelected(false);
 					found = true;
 					break;
 				}
@@ -533,6 +533,13 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 		playerSeed.setBounds(0, 110, 152, 22);
 		((PlainDocument)playerSeed.getDocument()).setDocumentFilter(hexFilter12);
 		findSeedPanel.add(playerSeed);
+
+		cbDummyMerged.setText(translate("enchCrack.dummyMerged"));
+		cbDummyMerged.setToolTipText(translate("enchCrack.dummyMerged.tooltip"));
+		cbDummyMerged.setSelected(false);
+		cbDummyMerged.setBounds(158, 110, 164, 22);
+		cbDummyMerged.setEnabled(false);
+		findSeedPanel.add(cbDummyMerged);
 
 		// --- Enchantment Calculator section
 
@@ -692,6 +699,7 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 		ProgressButton findEnchantment = new ProgressButton("button");
 		findEnchantment.setText(translate("enchCalc.calculate"));
 		findEnchantment.setToolTipText(translate("enchCalc.calculate.tooltip"));
+		ProgressButton btnContinue = new ProgressButton("button"); 
 		ProgressButton btnDone = new ProgressButton("button");
 		findEnchantment.addActionListener(event -> {
 			findEnchantment.setProgress(-1);
@@ -701,6 +709,7 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 			}
 			long seed = Long.valueOf(playerSeed.getText(), 16);
 			if (itemToEnch[0] == null) return;
+			boolean dummyMerged = cbDummyMerged.isSelected();
 			int maxShelvesVal = 0;
 			try {
 				maxShelvesVal = Integer.parseInt(maxShelves.getText());
@@ -753,13 +762,14 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 			int slot = 0;
 			int[] enchantLevels = new int[3];
 
-			outerLoop: for (int i = -1; i <= 64 * 32; i++) {
+			outerLoop: for (int i = dummyMerged ? 0 : -1; i <= 64 * 32; i++) {
 				int xpSeed;
 				if (i == -1) {
 					// XP seed will be the current seed, because there is no dummy enchant
 					xpSeed = (int) (seed >>> 16);
 				} else {
 					// XP seed will be the current seed, advanced by one because of the dummy enchant
+					// (or previous actual enchantment)
 					xpSeed = (int) (((seed * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_ffffL) >>> 16);
 				}
 
@@ -783,12 +793,14 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 
 						if (enchantLevels[slot] == 0) {
 							continue slotLoop;
-						} else if (i == -1) {
-							if (playerLevel < enchantLevels[slot]) {
+						} else {
+							int levelsRequired = enchantLevels[slot];
+							if (i == -1 || !dummyMerged) {
+								levelsRequired += 1;
+							}
+							if (playerLevel < levelsRequired) {
 								continue slotLoop;
 							}
-						} else if (playerLevel < (enchantLevels[slot] + 1)) {
-							continue slotLoop;
 						}
 
 						// Does this list contain all the enchantments we want?
@@ -830,36 +842,49 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 				outBook.setText("-");
 				outSlot.setText("-");
 				Log.info("Impossible combination");
-				btnDone.setProgress(Float.NaN);
 			} else if (timesNeeded == -1) {
 				outDrop.setText(translate("enchCalc.noDummy"));
 				outBook.setText(""+bookshelvesNeeded);
 				outSlot.setText(""+(slot + 1));
 				Log.info("No dummy, b = " + bookshelvesNeeded + ", s = " + (slot + 1));
-				btnDone.setProgress(-1);
 			} else {
 				if (timesNeeded > 63) outDrop.setText(String.format(translate("enchCalc.stackFormat"), timesNeeded / 64, timesNeeded % 64));
 				else outDrop.setText(""+timesNeeded);
 				outBook.setText(""+bookshelvesNeeded);
 				outSlot.setText(""+(slot + 1));
 				Log.info("Throw " + timesNeeded + " items, b = " + bookshelvesNeeded + ", s = " + (slot + 1));
-				btnDone.setProgress(-1);
 			}
+			btnContinue.setProgress(timesNeeded != -2 ? -1 : Float.NaN);
+			// allow finish the whole process when all enchantments have been done but
+			// the user clicked Continue instead of Done after last enchantment
+			btnDone.setProgress(timesNeeded != -2 || dummyMerged ? -1 : Float.NaN);
 			chosenSlot = slot;
 		});
-		findEnchantment.setBounds(6, 190, 264, 24);
+		findEnchantment.setBounds(6, 190, 200, 24);
 		manipPane.add(findEnchantment);
 
-		btnDone.setText(translate("enchCalc.done"));
-		btnDone.setProgress(Float.NaN);
-		btnDone.setToolTipText(translate("enchCalc.done.tooltip"));
-		btnDone.addActionListener(event -> {
-			Log.info("Enchanted and applied changes");
+		CompleteCallback completeEnch = (boolean enchApplied) -> {
+			if (enchApplied) {
+				Log.info("Enchanted and applied changes");
+			} else {
+				Log.info("Enchanted but did not apply changes");
+			}
+
+			long curSeed = Long.valueOf(playerSeed.getText(), 16);
+			boolean dummyMerged = cbDummyMerged.isSelected();
+
 			if (timesNeeded == -2 || chosenSlot == -1) {
 				// nothing happened, since it was impossible anyway
+				// but if the user tells us the last enchantment has been done, just do it
+				if (enchApplied && dummyMerged) {
+					curSeed = (curSeed * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_ffffL;
+					playerSeed.setText(String.format("%12X", curSeed));
+					cbDummyMerged.setSelected(false);
+					btnDone.setProgress(Float.NaN);
+				}
 				return;
 			}
-			long curSeed = Long.valueOf(playerSeed.getText(), 16);
+
 			if (timesNeeded != -1) {
 				// items thrown
 				for (int i = 0; i < timesNeeded; i++) {
@@ -867,28 +892,67 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 						curSeed = (curSeed * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_ffffL;
 					}
 				}
-				// dummy enchantment
+			}
+
+			int timesEnchanted = 0;
+			int levelsConsumed = 0;
+
+			if (dummyMerged) {
+				// previous actual enchantment, served as dummy
+				timesEnchanted += 1;
+			} else {
+				if (timesNeeded != -1) {
+					// dummy enchantment
+					timesEnchanted += 1;
+					levelsConsumed += 1;
+				}
+			}
+
+			if (enchApplied) {
+				// actual enchantment
+				timesEnchanted += 1;
+			}
+			// whether the enchantment has been done or not at present, its level consumption
+			// should always be calculated
+			levelsConsumed += chosenSlot + 1;
+
+			// update player seed according to how many enchantments are done
+			for (int i = 0; i < timesEnchanted; i++) {
 				curSeed = (curSeed * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_ffffL;
 			}
-			// actual enchantment
-			curSeed = (curSeed * 0x5deece66dL + 0xb) & 0x0000_ffff_ffff_ffffL;
 
 			try {
 				int playerLevel = Integer.parseInt(levelTextField.getText());
-				if (timesNeeded != -1) {
-					playerLevel--;
-				}
-				playerLevel -= (chosenSlot + 1);
+				playerLevel -= levelsConsumed;
 				levelTextField.setText(Integer.toString(playerLevel));
 			} catch (NumberFormatException e) {
 				Log.info("Could not update player level text");
 			}
 			playerSeed.setText(String.format("%12X", curSeed));
+			cbDummyMerged.setSelected(!enchApplied);
 			timesNeeded = -2;
 			outDrop.setText("-");
 			outBook.setText("-");
 			outSlot.setText("-");
-			btnDone.setProgress(Float.NaN);
+			btnContinue.setProgress(Float.NaN);
+			// as above
+			btnDone.setProgress(enchApplied ? Float.NaN : -1);
+		};
+
+		btnContinue.setText(translate("enchCalc.continue"));
+		btnContinue.setProgress(Float.NaN);
+		btnContinue.setToolTipText(translate("enchCalc.continue.tooltip"));
+		btnContinue.addActionListener(event -> {
+			completeEnch.callback(false);
+		});
+		btnContinue.setBounds(212, 190, 58, 24);
+		manipPane.add(btnContinue);
+
+		btnDone.setText(translate("enchCalc.done"));
+		btnDone.setProgress(Float.NaN);
+		btnDone.setToolTipText(translate("enchCalc.done.tooltip"));
+		btnDone.addActionListener(event -> {
+			completeEnch.callback(true);
 		});
 		btnDone.setBounds(276, 190, 58, 24);
 		manipPane.add(btnDone);
@@ -978,6 +1042,10 @@ public class EnchCrackerWindow extends StyledFrameMinecraft {
 		Insets i2 = rootPane.getBorder().getBorderInsets(this);
 		setSize(i.left + i.right + findSeedPanel.getSize().width + i2.left + i2.right, i.top + i.bottom + findSeedPanel.getSize().height + i2.top + i2.bottom);
 		setLocationRelativeTo(null);
+	}
+
+	interface CompleteCallback {
+		void callback(boolean enchApplied);
 	}
 
 	private static void browse(String url) {
